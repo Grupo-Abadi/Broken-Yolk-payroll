@@ -1,0 +1,82 @@
+{
+ "curUTC": "2026-11-13T12:00:00Z",
+ "locRef": "BYC999",
+ "businessDates": [
+  {
+   "busDt": "2026-11-12",
+   "timeCardDetails": [
+    {
+     "tcId": 5001,
+     "addedUTC": "2026-11-12T15:00:00Z",
+     "lastUpdatedUTC": "2026-11-12T19:05:00Z",
+     "empNum": 9001,
+     "payrollID": "EJ9001",
+     "extPayrollID": "9001",
+     "jcNum": 10,
+     "rvcNum": 1,
+     "clkInLcl": "2026-11-12T07:00:00",
+     "clkOutLcl": "2026-11-12T11:02:00",
+     "clkInUTC": "2026-11-12T15:00:00Z",
+     "clkOutUTC": "2026-11-12T19:02:00Z",
+     "clkInStatus": 84,
+     "clkOutStatus": 66,
+     "shiftType": 2,
+     "payRt": 17.0,
+     "regHrs": 4.04,
+     "regPay": 68.68,
+     "adjustments": []
+    },
+    {
+     "tcId": 5002,
+     "addedUTC": "2026-11-12T19:33:00Z",
+     "lastUpdatedUTC": "2026-11-12T22:10:00Z",
+     "empNum": 9001,
+     "payrollID": "EJ9001",
+     "extPayrollID": "9001",
+     "jcNum": 10,
+     "rvcNum": 1,
+     "clkInLcl": "2026-11-12T11:33:00",
+     "clkOutLcl": "2026-11-12T14:08:00",
+     "clkInUTC": "2026-11-12T19:33:00Z",
+     "clkOutUTC": "2026-11-12T22:08:00Z",
+     "clkInStatus": 84,
+     "clkOutStatus": 84,
+     "payRt": 17.0,
+     "regHrs": 2.58,
+     "regPay": 43.86,
+     "adjustments": []
+    },
+    {
+     "tcId": 5003,
+     "addedUTC": "2026-11-12T14:00:00Z",
+     "lastUpdatedUTC": "2026-11-12T23:05:00Z",
+     "empNum": 9002,
+     "payrollID": "EJ9002",
+     "extPayrollID": "9002",
+     "jcNum": 20,
+     "rvcNum": 1,
+     "clkInLcl": "2026-11-12T06:00:00",
+     "clkOutLcl": "2026-11-12T15:00:00",
+     "clkInUTC": "2026-11-12T14:00:00Z",
+     "clkOutUTC": "2026-11-12T23:00:00Z",
+     "clkInStatus": 84,
+     "clkOutStatus": 84,
+     "payRt": 18.5,
+     "regHrs": 8.0,
+     "regPay": 148.0,
+     "ovt1Hrs": 1.0,
+     "ovt1Pay": 27.75,
+     "adjustments": [
+      {
+       "adjId": 77,
+       "adjUTC": "2026-11-12T23:30:00Z",
+       "mgrName": "Gerente Ejemplo",
+       "prevClkOutLcl": "2026-11-12T15:20:00",
+       "rsn": "Olvido checar salida"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

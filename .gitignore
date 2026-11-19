@@ -1,0 +1,24 @@
+.streamlit/secrets.toml
+.streamlit/bi_secrets.toml
+.streamlit/labor_secrets.toml
+secrets.toml
+.env
+__pycache__/
+*.pyc
+
+# Datos de nomina: nombres, horas, sueldos y tips reales. Nunca al repo.
+# Los reportes que se bajen de Simphony y los exports de Gusto van en
+# reference/; lo que genere la herramienta, en salida/.
+reference/
+salida/
+gusto_import_*.csv
+retenidos_*.csv
+staging_*.csv
+exceptions_*.csv
+
+# Exports sueltos de Simphony o de Gusto que caigan en la carpeta. Si un mapeo
+# o un template tiene que ir al repo, se agrega aqui con ! a proposito.
+*.csv
+*.xlsx
+*.xls
+*.pdf

@@ -1,0 +1,37 @@
+{
+ "locRef": "BYC999",
+ "busDt": "2026-11-12",
+ "revenueCenters": [
+  {
+   "rvcNum": 1,
+   "employees": [
+    {
+     "empNum": 9001,
+     "chkCnt": 14,
+     "chrgRcptsTtl": 310.0,
+     "chrgTipsTtl": 55.5,
+     "tipsPdTtl": 55.5,
+     "svcTtl": 55.5,
+     "grossRcptsTtl": 402.1,
+     "netSlsTtl": 365.0
+    },
+    {
+     "empNum": 9003,
+     "chkCnt": 3,
+     "chrgRcptsTtl": 80.0,
+     "chrgTipsTtl": 12.0,
+     "tipsPdTtl": 10.0,
+     "svcTtl": 12.0,
+     "grossRcptsTtl": 95.0,
+     "netSlsTtl": 88.0
+    },
+    {
+     "empNum": 9004,
+     "chkCnt": 1,
+     "grossRcptsTtl": 20.0,
+     "netSlsTtl": 18.0
+    }
+   ]
+  }
+ ]
+}
