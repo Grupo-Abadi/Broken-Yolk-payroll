@@ -76,7 +76,8 @@ armado del CSV de Gusto, los cuadres y las pruebas.
 - No saltarse bloqueos de sitios web (nada de cambiar user-agent, proxies ni
   mirrors).
 - Nada publicado (artifacts, páginas) con sueldos o datos de empleados.
-- El repo tiene que ser privado (Grupo-Abadi/Broken-Yolk-payroll). No hagas
+- El repo tiene que ser privado (Jmemijeabadi/Broken-Yolk-payroll; antes
+  estuvo en la organización Grupo-Abadi y se movió el 19 nov 2026). No hagas
   `git push`: Jordan lo hace en GitHub Desktop.
 - Los cuadres comparan contra una fuente aparte. El de horas usa el total por
   puesto de Oracle (`getJobCodeDailyTotals`), no las mismas tarjetas.

@@ -191,9 +191,11 @@ además se mandan como Paycheck tips, se pagan dos veces.
      tiendas.
 2. **Tú: confirmar que este repo es privado** (GitHub → Settings → Danger Zone).
 3. **Tú: publicar la app en Streamlit Cloud.**
-   1. En GitHub, dale acceso a Streamlit a la organización Grupo-Abadi.
+   1. Que Streamlit pueda leer repos privados de tu cuenta: si al crear la app
+      no aparece el repo, en share.streamlit.io entra a tu perfil y da el
+      permiso de repos privados.
    2. En share.streamlit.io: **Create app**. Repo
-      `Grupo-Abadi/Broken-Yolk-payroll`, rama `main`, archivo `app.py`.
+      `Jmemijeabadi/Broken-Yolk-payroll`, rama `main`, archivo `app.py`.
    3. En **Settings → Secrets**, pega lo de `.streamlit/secrets.toml.example`
       con los valores reales y una `APP_PASSWORD` larga.
    4. En **Settings → Sharing**, deja que solo la vean las personas que operan
