@@ -118,10 +118,9 @@ además se mandan como Paycheck tips, se pagan dos veces.
 1. **Tú:** la seguridad de mealviolation.
    - Poner privado el repo.
    - Quitarle el acceso público a la app.
-   - Cambiar la contraseña de la cuenta API: ya había un aviso de que se
-     expuso y ahora además se pegó en un chat. Al cambiarla hay que
-     actualizarla en `.streamlit/secrets.toml` aquí y en los Secrets de
-     mealviolation.
+   - Cambiar la contraseña de la cuenta API. La comparten las dos
+     herramientas, así que hay que actualizarla en `.streamlit/secrets.toml`
+     de aquí y en los Secrets de mealviolation.
 2. **Tú:** lo de Gusto y las respuestas de abajo.
 3. **Yo:** el lector de Simphony, el motor y las pruebas con datos inventados.
 4. **Juntos:** de 2 a 4 periodos ya pagados en sombra, comparados contra lo
