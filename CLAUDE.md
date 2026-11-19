@@ -2,7 +2,7 @@
 
 Herramienta para pasar las horas y los tips de Oracle MICROS Simphony a un CSV
 listo para importar en Gusto (Smart Import), para los empleados de Broken Yolk
-en California.
+en California (por confirmar para las 8 tiendas: pregunta 10 del README).
 
 Es la hermana de `payroll tacos` (Toast → Gusto, Tacos El Franc), que ya está
 estable y en producción en `C:\Users\Jordan Memije\Downloads\payroll tacos`.
@@ -21,6 +21,8 @@ armado del CSV de Gusto, los cuadres y las pruebas.
   - Ejemplo: `shiftType = 2` va en el tramo de trabajo que termina en break
     (salida 66), no en el break.
   - Ejemplo: los tips no vienen en las tarjetas, sino en los totales diarios.
+  - Ejemplo: en `getJobCodeDailyTotals`, `ovtHrs` es el overtime total y
+    `ovt2Hrs` es parte de él; en las tarjetas, `ovt1Hrs` y `ovt2Hrs` se suman.
 - Para mirar datos reales: `python -I volcado_simphony.py` los baja a
   `reference/`. Los scripts que los lean van en otra carpeta, corren con
   `python -I` y solo imprimen conteos y totales (una suma de uno o dos
@@ -74,5 +76,7 @@ armado del CSV de Gusto, los cuadres y las pruebas.
 - No saltarse bloqueos de sitios web (nada de cambiar user-agent, proxies ni
   mirrors).
 - Nada publicado (artifacts, páginas) con sueldos o datos de empleados.
-- El repo es privado. `git push` está bloqueado: Jordan hace el push en
-  GitHub Desktop.
+- El repo tiene que ser privado (Grupo-Abadi/Broken-Yolk-payroll). No hagas
+  `git push`: Jordan lo hace en GitHub Desktop.
+- Los cuadres comparan contra una fuente aparte. El de horas usa el total por
+  puesto de Oracle (`getJobCodeDailyTotals`), no las mismas tarjetas.

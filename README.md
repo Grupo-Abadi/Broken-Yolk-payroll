@@ -1,103 +1,166 @@
 # Broken Yolk payroll
 
-Pasa las horas y los tips de Oracle MICROS Simphony a un CSV listo para
-importar en Gusto (Smart Import). Es para las 8 tiendas de Broken Yolk:
-BYC301 y de BYC303 a BYC309.
+Pasa las horas y los tips de Oracle MICROS Simphony a la nómina de Gusto. Es
+para las 8 tiendas de Broken Yolk: BYC301 y de BYC303 a BYC309.
 
 Es la hermana de `payroll tacos` (Toast → Gusto, Tacos El Franc), que ya está
-estable. De ahí se reusa todo lo que no depende del POS.
+estable. De ahí viene lo que no depende del POS.
 
 ## Estado al 18 nov 2026
 
-- ✅ **Conexión con Oracle.** El cliente de la BI API, traído de mealviolation,
-  ya entra con la cuenta API.
-- ✅ **Volcado del 31 oct al 13 nov:** 8 tiendas, 14 días, 3,309 tarjetas y 0
-  errores, en 3 minutos.
-- ✅ **24 pruebas sin conexión:** `python -m unittest test_simphony`.
-- ⏭️ **Siguiente:** el lector de Simphony y el motor de tacos, que juntos arman
-  el CSV.
-- ⏳ **Falta de tu lado:** lo de "Lo que necesito de ti", hasta abajo.
+- ✅ **Primera versión de la app** (`app.py`). Jala de Oracle un periodo y
+  enseña, por persona:
+  - horas regulares, de overtime y dobles, con las reglas de California;
+  - primas de meal;
+  - tips, para revisar.
+
+  Trae cuadres y avisos.
+- ✅ **Probada con el periodo del 31 oct al 13 nov:** 8 tiendas, 3,309
+  tarjetas, 241 personas.
+- ✅ **122 pruebas sin conexión:**
+  `python -m unittest test_payroll test_simphony test_app`.
+- ⏳ **Falta el CSV de Gusto:** necesito el template de Smart Import de cada
+  empresa.
+- ⏳ **Falta decidir los tips:** cómo se pagan y a quién le tocan (preguntas 1
+  a 5, abajo).
 
 ## Lo que dicen los datos (31 oct–13 nov)
 
-### Horas: vienen limpias
+### Horas
 
 - **Tarjetas:** ninguna abierta. 171 traen ajustes de gerente.
-- **Personas:** 241. Ninguna trabajó en dos tiendas en el periodo. 17 tuvieron
-  más de un puesto y solo 3 más de una tarifa.
-- **Overtime:** el de Oracle (Labor Management) viene en dos niveles: `ovt1`
-  en 57 tarjetas y `ovt2` en 4.
-  - Se recalcula con las reglas de California, y lo de Oracle queda para
-    comparar.
-- **Primas:** Oracle no paga ninguna por su lado; ninguna tarjeta trae
-  `premHrs`.
+- **Personas:** 241 por payrollID. Ninguna trabajó en dos tiendas (también
+  por payrollID). 17 tuvieron más de un puesto y 3 más de una tarifa.
+- **Primas:** ninguna tarjeta trae `premHrs` ni `premPay`, así que Labor
+  Management no calcula primas en las tarjetas.
 
-### Meals: se pueden revisar
+### Overtime: Oracle pone menos del que pide California
 
-- **Cómo se ve un meal:** al salir a comer se checa la salida con el código 66,
-  y ese tramo trae `shiftType = 2`. El meal es el hueco hasta la siguiente
-  entrada.
-- **Cuánto duraron:** de 1,275 meals,
+- **Lo que puso Oracle:** su overtime viene de las reglas de Labor
+  Management: `ovt1` en 57 tarjetas y `ovt2` en 4, en total 60.30 h.
+- **Lo que da California** con las mismas horas: 81.77 h de overtime y 12.93
+  h dobles.
+- **La diferencia, neta por persona y semana:**
+  - En 19 semanas de alguien, California da 36.06 h más de overtime o doble
+    que Oracle.
+  - En otras 3, Oracle puso 1.66 h de más.
+  - De 68 jornadas de más de 8 horas, Oracle les puso overtime solo a 38.
+- **Qué significa:** si hoy se paga lo que calcula Oracle, esas horas se
+  estarían pagando como regulares. Puede ser que Labor Management corte los
+  días distinto (su "Start Labor Hour"); hay que revisarlo.
+
+### Meals
+
+- **Cómo se ven:** salir a comer es checar salida con el código 66. Casi
+  siempre (1,311 de 1,322 veces) ese tramo trae `shiftType = 2`. El meal es el
+  hueco hasta la siguiente entrada.
+- **Cuánto duraron las 1,275 salidas a break con regreso:**
   - 1,230 duraron de 30 a 44 min;
   - 15 duraron 45 min o más;
   - 25 duraron de 10 a 29 min;
   - 5 duraron menos de 10 min.
-- **Sin regreso:** 47 veces salieron a break y no regresaron en el mismo turno.
-- **Falta:** contar los turnos de más de 5 horas sin meal. Eso lo hace el
-  motor.
 
-### Rest breaks de 10 minutos: no se checan
+  Además, 47 veces salieron a break y no regresaron ese día.
+- **Las salidas a break de menos de 30 minutos no cuentan como meal** (29 en
+  el periodo).
+  - No hay tolerancia: con el redondeo de Oracle, un meal de 30 min siempre
+    mide 30:00 o más, y en California los meals no se redondean.
+  - Si eran descansos de 10 minutos, en California se pagan, y Oracle no los
+    pagó.
+- **Los meals se miden con lo que duraron las checadas**, no con lo que paga
+  Oracle. En 24 tarjetas no coinciden.
+- **Los waivers cambian todo.**
+  - Con la regla estricta (sin waivers) salen 476 horas de prima en las dos
+    semanas, de 145 personas.
+  - Con waivers firmados serían 105 horas, de 64 personas.
+  - De las 430 jornadas de más de 5 horas sin meal completo, 369 duraron de 5
+    a 6 horas.
 
-En todo el periodo no hay ni un break pagado. La prima de rest no se puede
-calcular con los datos: es una decisión de política.
+  La app usa la estricta y enseña la otra al lado.
+- **Turnos partidos:** 5 jornadas tienen un hueco de más de una hora. Cuenta
+  como meal, pero en California un turno partido puede llevar una hora extra
+  de pago.
+
+### Rest breaks
+
+No hay ningún break pagado en el periodo. Si los descansos de 10 minutos no se
+checan, su prima no se puede calcular con los datos.
 
 ### Tips: vienen por otro lado y no cuadran solos
 
 - **No vienen en las tarjetas.** Vienen en los totales diarios por persona
   (`getEmployeeDailyTotals`), sin puesto.
-- **Tips con tarjeta (`chrgTipsTtl`):** los gana el dueño del cheque.
-- **Tips pagados (`tipsPdTtl`):** son el efectivo que sale de la caja.
-  - En el periodo suman como 9% más que los de tarjeta.
-  - Solo coinciden con los de tarjeta en 288 de 619 renglones.
-  - Parece que el pago queda a nombre de quien lo registra en la caja y que
-    ahí caen también service charges. Hay que confirmarlo.
+- **`chrgTipsTtl`** son los tips con tarjeta. Oracle se los acredita al dueño
+  del cheque, antes de cualquier pool.
+- **`tipsPdTtl`** es el registro del tender "Tips Paid".
+  - Puede registrarse solo y traer también service charges.
+  - En el periodo suma como 9% más que los de tarjeta.
+  - Por persona coincide con los de tarjeta solo en 288 de 619 renglones.
+  - A nombre de quién queda, está por confirmar.
+- **`svcTtl` incluye los tips con tarjeta:** el 12 nov en BYC301 fue igual a
+  `chrgTipsTtl`. No se debe sumar a los tips ni pagarse como service charge.
+  Un cargo de verdad sería la diferencia, y hay que confirmarlo con la
+  configuración de cada service charge.
 - **Lo que no hay:** efectivo declarado ni Tip Track. Tips indirectos hay en
   solo 2 renglones.
-- **Cuentas que no checan ese día:** 169 renglones con tips son de 22 cuentas
-  (por tienda) que no checaron ese día:
-  - 8 son "SuperUser": accesos de sistema que nunca checan y que juntan tips
-    con tarjeta.
-  - 6 son "Manager" que nunca checan.
-  - 8 son "Server"; 2 de ellos sí checan otros días.
-- **Service charges sin explicar:** hay algunos que no son tips con tarjeta:
-  `nonRevSvcTtl` en 44 renglones y `tipTtl` en 68. Falta saber qué son.
+- **Campos sin explicar:** `nonRevSvcTtl`, en 44 renglones, y `tipTtl`, en
+  68, que Oracle lista entre los tips. No se suma ninguno hasta saber qué son.
+- **Cuentas que nunca checan en el periodo y traen tips:**
+
+  | Clase | Cuentas | Días con tips |
+  | --- | --- | --- |
+  | SuperUser | 8 | 81 |
+  | Manager | 6 | 37 |
+  | Server | 6 | 63 |
+
+  Las SuperUser traen sobre todo tips con tarjeta; las Manager y Server,
+  sobre todo tips pagados. Qué son esas cuentas está por confirmar. La app
+  deja sus tips retenidos y enseña los montos.
 
 Más detalle, con las fuentes de Oracle, en [NOTAS_SIMPHONY.md](NOTAS_SIMPHONY.md).
 
-## Cómo va a funcionar
+## Cómo funciona
 
-1. **Simphony.** Por tienda y día, `getTimeCardDetails` da los tramos y
-   `getEmployeeDailyTotals` da los tips.
-2. **Jornadas.** Los tramos se juntan por persona y día legal. Los meals son
-   los huecos después de un 66.
+1. **Simphony.** Pide a la BI API:
+   - por tienda, `getLatestBusDt`: si el último día del periodo no ha cerrado,
+     no deja concluir;
+   - por tienda y día, `getTimeCardDetails`: los tramos;
+   - por tienda y día, `getEmployeeDailyTotals`: los tips;
+   - por tienda y día, `getJobCodeDailyTotals`: el total por puesto, que
+     sirve para cuadrar.
+
+   Si Oracle rechaza la contraseña, deja de pedir al primer intento, para no
+   bloquear la cuenta. Si falla 3 veces seguidas, también se detiene.
+2. **Jornadas.** Los tramos se juntan por persona y día de negocio de Oracle.
+   Los meals son los huecos después de un 66, o huecos de 30 min o más.
 3. **California.** Con las checadas, no con lo que calcula Oracle:
    - overtime diario (más de 8 h), doble (más de 12 h), semanal (más de 40 h)
      y séptimo día;
    - la prima de meal por persona y día.
-4. **Gusto.** Un CSV de Smart Import por empresa, con las reglas de tacos:
-   - celda vacía, nunca 0;
-   - cuadres de horas y tips;
-   - lo que no se puede asignar se queda retenido para revisar.
+4. **Cuadres.**
+   - Las horas repartidas son las mismas que paga Oracle.
+   - Las tarjetas cuadran, tienda por tienda y día por día, con el total por
+     puesto que Oracle calcula aparte.
+   - Los tips leídos (personas más retenidos) cuadran con lo que Oracle mandó
+     crudo.
+
+   Si algo no cuadra o falta un dato, la app no deja concluir ni descargar.
+5. **Gusto** (falta). Un CSV de Smart Import por empresa, con las reglas de
+   tacos: celda vacía, nunca 0.
 
 ## De dónde sale cada pieza
 
-| Pieza | Viene de | Qué cambia |
+| Pieza | Viene de | Qué cambió |
 | --- | --- | --- |
-| Cliente de la BI API (`oracle_bi/`) | mealviolation, commit 575b084 | Ya está aquí. Reintenta ante errores de Oracle, trae `getEmployeeDailyTotals` y la contraseña no sale en logs. |
-| Códigos de checada, día legal con horario de verano, revisión de checadas y de cobertura | mealviolation (`compliance/`) | Leer el `shiftType` como de verdad viene, no prorratear horas y no convertir un campo que falta en 0. |
-| Overtime de California (`ca_overtime.py`) | tacos, commit 6fab0a7 | La semana laboral y el periodo de Broken Yolk. |
-| Prima de meal por persona y día, CSV de Gusto, cuadres, retenidos, avisos y pantalla | tacos (`gusto_export.py`, `app.py`) | Separar la parte de Toast del motor, usar las columnas del template de Broken Yolk y permitir varias tiendas por empresa. |
-| Tips | nuevo | Según cómo reparta Broken Yolk (abajo). |
+| Cliente de la BI API (`oracle_bi/`) | mealviolation, commit 575b084 | Reintenta ante errores de Oracle, se rinde tras 3 fallas seguidas, tacha las credenciales de los errores y trae los totales diarios. |
+| Lector de Simphony (`simphony.py`) | nuevo | Lee los campos como vienen de verdad. |
+| Overtime de California (`ca_overtime.py`) | tacos, commit 6fab0a7 | El séptimo día respeta el inicio de semana que se le pasa. |
+| Motor y pantalla (`motor.py`, `app.py`) | nuevos, al estilo de tacos | Contraseña, cuadres, avisos y la versión del resultado, como en tacos. |
+
+**Ojo con el código de mealviolation (`compliance/`):** le da a `shiftType` el
+significado de la documentación de Oracle (2 = break sin pago). En los datos,
+2 es un tramo de trabajo que se paga. Si algún día se reusa algo de ahí, no
+basta con renombrar el campo.
 
 ## Tips en Gusto: lo que hay que decidir
 
@@ -108,64 +171,95 @@ además se mandan como Paycheck tips, se pagan dos veces.
 
 | En Oracle | Qué es | A Gusto (propuesta, por confirmar) |
 | --- | --- | --- |
-| `chrgTipsTtl` | Tips con tarjeta, del dueño del cheque | Cash tips si se pagan en efectivo esa noche; Paycheck tips si van en el cheque. |
-| `tipsPdTtl` | Efectivo que salió de la caja para pagar tips | Sirve para cuadrar, no para repartir: queda a nombre de quien lo registra. |
-| `svcTtl` y `nonRevSvcTtl` | Service charges | Si es un cargo obligatorio (grupos grandes, catering), no es tip: es sueldo, como la gratuity de tacos. |
-| Tips de cuentas SuperUser o Manager | Cheques cerrados con accesos de sistema | Retenidos hasta saber de quién son. |
+| `chrgTipsTtl` | Tips con tarjeta, acreditados al dueño del cheque | Cash tips si se pagan en efectivo esa noche; Paycheck tips si van en el cheque. |
+| `tipsPdTtl` | Registro del tender Tips Paid | Sirve para cuadrar, no para repartir. |
+| `svcTtl` | Todos los service charges, incluidos los tips con tarjeta | Nada directo. Solo la diferencia contra los tips sería un cargo, y un cargo obligatorio es sueldo, como la gratuity de tacos. |
+| `nonRevSvcTtl`, `tipTtl` | Sin explicar | Nada hasta saber qué son. |
+| Tips de cuentas que nunca checan | Por confirmar | Retenidos. |
 
 ## Pasos
 
-1. **Tú:** la seguridad de mealviolation.
-   - Poner privado el repo.
-   - Quitarle el acceso público a la app.
-   - Cambiar la contraseña de la cuenta API. La comparten las dos
-     herramientas, así que hay que actualizarla en `.streamlit/secrets.toml`
-     de aquí y en los Secrets de mealviolation.
-2. **Tú:** lo de Gusto y las respuestas de abajo.
-3. **Yo:** el lector de Simphony, el motor y las pruebas con datos inventados.
-4. **Juntos:** de 2 a 4 periodos ya pagados en sombra, comparados contra lo
+1. **Tú: la seguridad de mealviolation.**
+   - Poner privado su repo y quitarle el acceso público a la app.
+   - Cambiar la contraseña de la cuenta API. Vence cada 60 días: pon un
+     recordatorio.
+   - Mientras las dos herramientas compartan la cuenta, hay que cambiarla en
+     las dos (aquí en `.streamlit/secrets.toml` y en los Secrets de
+     mealviolation). Si una se queda con la vieja, sus intentos bloquean la
+     cuenta 30 minutos para las dos.
+   - Lo mejor es pedir una cuenta API solo para la nómina, limitada a las 8
+     tiendas.
+2. **Tú: confirmar que este repo es privado** (GitHub → Settings → Danger Zone).
+3. **Tú: publicar la app en Streamlit Cloud.**
+   1. En GitHub, dale acceso a Streamlit a la organización Grupo-Abadi.
+   2. En share.streamlit.io: **Create app**. Repo
+      `Grupo-Abadi/Broken-Yolk-payroll`, rama `main`, archivo `app.py`.
+   3. En **Settings → Secrets**, pega lo de `.streamlit/secrets.toml.example`
+      con los valores reales y una `APP_PASSWORD` larga.
+   4. En **Settings → Sharing**, deja que solo la vean las personas que operan
+      la nómina.
+4. **Tú: lo de Gusto y las respuestas de abajo.**
+5. **Yo: el CSV de Gusto** y lo que salga de tus respuestas.
+6. **Juntos:** de 2 a 4 periodos ya pagados en sombra, comparados contra lo
    que se pagó en Gusto, como la prueba de Bonita en tacos.
-5. **Primera corrida real.**
+7. **Primera corrida real.**
 
 ## Lo que necesito de ti
 
 1. **Tips con tarjeta:** ¿se los dan en efectivo esa misma noche o van en el
-   cheque de nómina? Los datos dicen que en efectivo.
-2. **Pool o tip share:** ¿reparten con cocina, bussers o hosts? ¿Cómo y dónde
+   cheque de nómina? En el total del periodo casi cuadran con los tips pagados
+   (+9%), pero por persona solo en 288 de 619 renglones.
+2. **Efectivo:** ¿los clientes dejan propinas en efectivo? ¿Las declaran en la
+   terminal al checar salida, en otro lado, o no se declaran? En Oracle no hay
+   ninguna declarada.
+3. **Pool o tip share:** ¿reparten con cocina, bussers o hosts? ¿Cómo y dónde
    lo anotan? Oracle no trae nada de eso.
-3. **Service charges:** ¿hay cargo automático para grupos grandes, catering o
+4. **Service charges:** ¿hay cargo automático para grupos grandes, catering o
    pedidos en línea? ¿A quién le toca ese dinero?
-4. **Cuentas SuperUser y Manager que cobran tips sin checar:** ¿de quién son
-   esos tips?
-5. **Gusto:**
+5. **Cuentas SuperUser, Manager y Server que nunca checan:** ¿qué son, y de
+   quién son sus tips con tarjeta y sus tips pagados?
+6. **Gusto:**
    - ¿cuántas empresas (LLC) hay y qué tiendas van en cada una?
    - el calendario de pago y el día en que empieza la semana laboral;
    - el template de Smart Import de cada empresa;
    - el export de empleados.
 
-   El periodo que usó mealviolation fue de sábado a viernes, cada dos
-   semanas, igual que tacos.
-6. **Meals:** ¿hay waivers firmados? ¿Hoy pagan la prima de meal? ¿En horas o
-   en dólares?
-7. **Rest breaks:** no se checan. ¿Qué política tienen?
-8. **Hoy:** ¿quién hace la nómina de Broken Yolk, de qué reporte saca las horas
+   **Ojo:** el export de empleados de Gusto trae SSN, fecha de nacimiento y
+   domicilio. Ponlo en `reference/` de esta carpeta, nunca lo pegues en el
+   chat. Si puedes, saca uno con solo nombre, código, puesto y tarifa.
+
+   El periodo que usó mealviolation fue de sábado a viernes, cada dos semanas,
+   igual que tacos.
+7. **Meals:**
+   - ¿hay waivers firmados?
+   - ¿hoy pagan la prima de meal, y en horas o en dólares?
+   - ¿una hora de prima por día, que es lo que pide la ley y lo que hace hoy
+     la app, o una por cada meal perdido, como se decidió en tacos?
+   - ¿alguien captura primas en Oracle (premium pay u "Other Pay")?
+8. **Descansos de 10 minutos:** ¿los checan como break? ¿Qué política tienen?
+9. **Hoy:** ¿quién hace la nómina de Broken Yolk, de qué reporte saca las horas
    y los tips, y qué captura a mano en Gusto?
-9. ¿Las 8 tiendas están en California?
-10. ¿Para cuándo quieres la primera corrida?
+10. ¿Las 8 tiendas están en California?
+11. ¿Para cuándo quieres la primera corrida?
 
 ## Archivos
 
 | Archivo | Para qué |
 | --- | --- |
-| `oracle_bi/` | Cliente de la BI API: inicio de sesión, tarjetas, totales diarios, empleados y puestos. |
-| `volcado_simphony.py` | Baja los datos crudos de un rango a `reference/` y en pantalla solo enseña qué campos vienen y totales. |
-| `test_simphony.py`, `fixtures/` | Pruebas sin conexión, con datos inventados que tienen la forma real. |
+| `app.py` | La pantalla: `streamlit run app.py`. |
+| `motor.py` | Horas, primas, tips, cuadres y avisos por persona; el calendario. |
+| `simphony.py` | Lector de Oracle: tramos, jornadas, meals y tips. |
+| `ca_overtime.py` | Overtime de California. |
+| `oracle_bi/` | Cliente de la BI API. |
+| `volcado_simphony.py` | Baja los datos crudos de un rango a `reference/`. En pantalla solo enseña qué campos vienen y sumas de 3 personas o más. |
+| `simphony_falso.py`, `fixtures/` | Datos inventados con la forma real, para las pruebas. |
+| `test_payroll.py`, `test_simphony.py`, `test_app.py` | Pruebas sin conexión. |
 | `NOTAS_SIMPHONY.md` | Lo que se sabe de Simphony, con fuentes. |
 | `CLAUDE.md` | Reglas de trabajo y de seguridad que vienen de tacos. |
-| `.streamlit/secrets.toml.example` | Plantilla de las credenciales. El archivo real no va al repo. |
-| `reference/`, `salida/` | Datos reales y archivos generados. No van al repo. |
+| `.streamlit/secrets.toml.example` | Plantilla de las credenciales y de la contraseña de la app. El archivo real no va al repo. |
+| `reference/`, `salida/` | Datos reales. No van al repo. |
 
-Para bajar un rango:
+Para bajar un rango crudo (cada corrida va a su propia carpeta):
 
 ```
 python -I volcado_simphony.py --desde 2026-10-31 --hasta 2026-11-13

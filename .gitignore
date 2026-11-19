@@ -22,3 +22,15 @@ exceptions_*.csv
 *.xlsx
 *.xls
 *.pdf
+*.zip
+
+# Copias y respaldos del archivo de credenciales, con cualquier nombre.
+*.toml
+*.toml.*
+!*.toml.example
+!.streamlit/config.toml
+
+# Respuestas crudas de Oracle fuera de reference/. Los datos de prueba
+# (inventados) si van.
+*.json
+!fixtures/*.json

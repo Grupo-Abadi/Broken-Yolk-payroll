@@ -30,6 +30,16 @@
      "chkCnt": 1,
      "grossRcptsTtl": 20.0,
      "netSlsTtl": 18.0
+    },
+    {
+     "empNum": 9005,
+     "chkCnt": 2,
+     "chrgRcptsTtl": 40.0,
+     "chrgTipsTtl": 7.5,
+     "tipsPdTtl": 7.5,
+     "svcTtl": 7.5,
+     "grossRcptsTtl": 45.0,
+     "netSlsTtl": 40.0
     }
    ]
   }

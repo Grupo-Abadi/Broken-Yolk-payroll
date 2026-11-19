@@ -4,15 +4,20 @@
     python -I volcado_simphony.py --desde 2026-11-12 --hasta 2026-11-12 --tiendas BYC301
 
 Pide a la BI API, por tienda, los empleados, los puestos y la última fecha de
-negocio; y por tienda y día, las tarjetas de tiempo (con sus ajustes) y los
-totales diarios por empleado. Guarda cada respuesta tal cual en
-reference/volcado_<desde>_<hasta>/, que no va al repo porque trae nombres,
-tarifas y tips reales.
+negocio; y por tienda y día, las tarjetas de tiempo (con sus ajustes), los
+totales diarios por empleado y los totales diarios por puesto. Guarda cada respuesta como llegó, más las llaves
+que agrega el cliente (las que empiezan con _), en
+reference/volcado_<desde>_<hasta>_<hora de la corrida>/. Esa carpeta no va al
+repo porque trae nombres, tarifas y tips reales.
 
 En pantalla solo sale el inventario de campos (en cuántos registros viene cada
-uno y en cuántos trae algo) y sumas por tienda. Nunca un valor de un renglón:
-ni nombres, ni ids, ni montos de una persona. Oracle omite los campos que valen
-0 o null, así que un campo que "viene en" pocos registros no es un error.
+uno y en cuántos trae algo) y sumas de horas y dinero. Nunca un valor de un
+renglón: ni nombres, ni ids, ni montos de una persona. Una suma solo se enseña
+si junta a 3 personas o más. Oracle omite los campos que valen 0 o null, así
+que un campo que "viene en" pocos registros no es un error.
+
+Si Oracle falla 3 veces seguidas, el volcado deja de pedir: con la red caída o
+la cuenta bloqueada, seguir solo acumula intentos.
 
 Las credenciales salen de .streamlit/secrets.toml, sección [oracle_bi].
 """
@@ -23,7 +28,7 @@ import json
 import re
 import sys
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -33,22 +38,25 @@ AQUI = Path(__file__).resolve().parent
 if str(AQUI) not in sys.path:
     sys.path.insert(0, str(AQUI))
 
-from oracle_bi.client import OracleBIClient, OracleBIError  # noqa: E402
+from oracle_bi.client import OracleBIAuthError, OracleBIClient, OracleBIError  # noqa: E402
 from oracle_bi.settings import config_from_toml_file  # noqa: E402
 
 SECRETS = AQUI / ".streamlit" / "secrets.toml"
 REFERENCIA = AQUI / "reference"
 MAX_DIAS = 31
 
-# Solo se imprimen llaves que parecen nombres de campo. Si Oracle llegara a
-# usar un dato como llave (un número de empleado, un nombre), se cuenta pero
-# no se enseña.
-LLAVE_DE_CAMPO = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+# Solo se imprimen llaves que parecen nombres de campo de Oracle, que van en
+# camelCase empezando con minúscula (busDt, chrgTipsTtl), o las que agrega el
+# cliente (_requestedBusDt). Si Oracle llegara a usar un dato como llave (un
+# número de empleado, un nombre como "Ana"), se cuenta pero no se enseña.
+LLAVE_DE_CAMPO = re.compile(r"^_?[a-z][A-Za-z0-9]{0,63}$")
 # Campos que se suman: horas y dinero. La tarifa no se suma.
 CAMPO_SUMABLE = re.compile(r"(Hrs|Pay|Tips|Ttl|Rcpts|Amt)$")
 NO_SUMAR = {"payRt"}
-# Una suma de uno o dos registros es el monto de una o dos personas: no se enseña.
+# Una suma de una o dos personas es su monto: no se enseña. Se cuentan
+# personas (empNum), no registros: una persona trae un registro por día.
 MINIMO_PARA_SUMA = 3
+MAX_FALLAS_SEGUIDAS = 3
 
 
 def _tipo(valor: Any) -> str:
@@ -88,21 +96,28 @@ class Inventario:
         self.campos: dict[tuple[str, str], dict[str, Any]] = {}
         self.llaves_ocultas: dict[str, int] = defaultdict(int)
 
-    def agregar(self, objeto: Any, ruta: str = "$") -> None:
+    def agregar(self, objeto: Any, ruta: str = "$", persona: str | None = None) -> None:
         if isinstance(objeto, list):
             for elemento in objeto:
-                self.agregar(elemento, ruta + "[]")
+                self.agregar(elemento, ruta + "[]", persona)
             return
         if not isinstance(objeto, dict):
             return
         self.registros[ruta] += 1
+        # La persona del registro es su empNum; lo de adentro (los ajustes de
+        # una tarjeta) hereda la de su registro. Sin empNum, cada registro
+        # cuenta como alguien distinto.
+        if objeto.get("empNum") is not None:
+            persona = str(objeto.get("empNum"))
+        quien = persona if persona is not None else f"{ruta}#{self.registros[ruta]}"
         for clave, valor in objeto.items():
             clave = str(clave)
             if not LLAVE_DE_CAMPO.match(clave):
                 self.llaves_ocultas[ruta] += 1
                 continue
             campo = self.campos.setdefault(
-                (ruta, clave), {"viene": 0, "con_valor": 0, "tipos": set(), "suma": None}
+                (ruta, clave),
+                {"viene": 0, "con_valor": 0, "tipos": set(), "suma": None, "personas": set()},
             )
             campo["viene"] += 1
             campo["tipos"].add(_tipo(valor))
@@ -115,8 +130,9 @@ class Inventario:
                 and clave not in NO_SUMAR
             ):
                 campo["suma"] = (campo["suma"] or 0.0) + float(valor)
+                campo["personas"].add(quien)
             if isinstance(valor, (dict, list)):
-                self.agregar(valor, f"{ruta}.{clave}")
+                self.agregar(valor, f"{ruta}.{clave}", persona)
 
     def formatear(self, titulo: str) -> str:
         lineas = [f"== {titulo}"]
@@ -129,8 +145,8 @@ class Inventario:
                     continue
                 if campo["suma"] is None:
                     suma = ""
-                elif campo["con_valor"] < MINIMO_PARA_SUMA:
-                    suma = "   suma sin enseñar (pocos registros)"
+                elif len(campo["personas"]) < MINIMO_PARA_SUMA:
+                    suma = "   suma sin enseñar (menos de 3 personas)"
                 else:
                     suma = f"   suma {campo['suma']:,.2f}"
                 lineas.append(
@@ -152,6 +168,7 @@ CONSULTAS_POR_TIENDA = (
 CONSULTAS_POR_DIA = (
     ("timecards", "getTimeCardDetails", "get_timecards"),
     ("employee_daily_totals", "getEmployeeDailyTotals", "get_employee_daily_totals"),
+    ("job_code_daily_totals", "getJobCodeDailyTotals", "get_job_code_daily_totals"),
 )
 
 
@@ -181,7 +198,7 @@ def correr(
 ) -> dict[str, Any]:
     """Hace el volcado y regresa el resumen. client es un OracleBIClient o
     cualquier cosa con los mismos métodos (las pruebas usan uno falso)."""
-    carpeta.mkdir(parents=True, exist_ok=True)
+    carpeta.mkdir(parents=True, exist_ok=False)
     errores: list[dict[str, str]] = []
     inventarios = {nombre: Inventario() for nombre in
                    ["locations"] + [c[0] for c in CONSULTAS_POR_TIENDA + CONSULTAS_POR_DIA]}
@@ -192,15 +209,41 @@ def correr(
             json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8"
         )
 
+    fallas_seguidas = 0
+    cortado = False
+
     def pedir(etiqueta: str, funcion: Callable[..., dict[str, Any]], *args: Any):
+        nonlocal fallas_seguidas, cortado
+        if cortado:
+            return None
         try:
-            return funcion(*args)
+            respuesta = funcion(*args)
+        except OracleBIAuthError as exc:
+            # Cada intento fallido acerca el bloqueo de la cuenta: se corta ya.
+            errores.append({"consulta": etiqueta, "error": str(exc)})
+            errores.append({"consulta": "volcado", "error": "Oracle no dejó iniciar sesión"})
+            salida(f"   x {etiqueta}: {exc}")
+            salida("   x Oracle no dejó iniciar sesión; ya no se pide nada más. Si el error dice 400, "
+                   "401 o 403, revisa la contraseña; si dice 429 o 5xx, intenta más tarde.")
+            cortado = True
+            return None
         except OracleBIError as exc:
             errores.append({"consulta": etiqueta, "error": str(exc)})
             salida(f"   x {etiqueta}: {exc}")
+            fallas_seguidas += 1
+            if fallas_seguidas >= MAX_FALLAS_SEGUIDAS:
+                cortado = True
+                errores.append({"consulta": "volcado",
+                                "error": f"se cortó tras {MAX_FALLAS_SEGUIDAS} fallas seguidas"})
+                salida(f"   x Oracle falló {MAX_FALLAS_SEGUIDAS} veces seguidas; ya no se pide nada más")
             return None
+        fallas_seguidas = 0
+        return respuesta
 
     salida(f"Volcado del {desde} al {hasta}; se guarda en {carpeta}")
+    # Si getLocationDimensions falla, no se sigue aunque se hayan dado tiendas:
+    # casi siempre es el inicio de sesión o los permisos, y repetirlo por cada
+    # tienda solo suma intentos fallidos, que bloquean la cuenta 30 minutos.
     locations = pedir("getLocationDimensions", client.get_locations)
     if locations is not None:
         guardar("locations.json", locations)
@@ -208,11 +251,15 @@ def correr(
         conocidas = {
             str(l.get("locRef")): l for l in locations.get("locations") or [] if isinstance(l, dict)
         }
-        activas = [ref for ref, l in conocidas.items() if l.get("active", True)]
+        # Oracle omite los campos que valen false: sin "active", inactiva.
+        activas = [ref for ref, l in conocidas.items() if l.get("active") is True]
         elegidas = tiendas or sorted(activas)
         for ref in tiendas:
             if ref not in conocidas:
                 salida(f"   ! {ref} no viene en getLocationDimensions; se pide de todos modos")
+        if not elegidas:
+            errores.append({"consulta": "getLocationDimensions", "error": "no hay ninguna tienda que pedir"})
+            salida("   x No hay ninguna tienda que pedir")
 
         for ref in elegidas:
             resumen = {"dias": 0, "dias_sin_tarjetas": 0, "tarjetas": 0, "empleados": set(), "errores": 0}
@@ -285,7 +332,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     tiendas = [t.strip() for t in args.tiendas.split(",") if t.strip()]
-    carpeta = REFERENCIA / f"volcado_{args.desde}_{args.hasta}"
+    # Una carpeta por corrida, para que nada de una corrida anterior se mezcle.
+    carpeta = REFERENCIA / f"volcado_{args.desde}_{args.hasta}_{datetime.now():%Y%m%d-%H%M%S}"
     resultado = correr(OracleBIClient(config), args.desde, args.hasta, tiendas, carpeta)
     return 1 if resultado["errores"] else 0
 

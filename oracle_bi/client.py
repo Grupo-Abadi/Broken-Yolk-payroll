@@ -5,7 +5,8 @@ contra el enterprise de Broken Yolk: 8 tiendas y 2,941 tarjetas en un periodo.
 Cambios desde ahí:
 - Las consultas de datos se reintentan ante 429, 5xx y fallas de red. El inicio
   de sesión no: un código de autorización no se puede usar dos veces.
-- get_employee_daily_totals, para cuadrar los tips por persona y día.
+- get_employee_daily_totals, para los tips por persona y día, y
+  get_job_code_daily_totals, para cuadrar las horas de las tarjetas.
 - La contraseña y los tokens no salen en el repr: un log o un traceback que
   imprima la configuración ya no los enseña.
 - Mensajes en español.
@@ -22,7 +23,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Iterable
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 import requests
 
@@ -31,13 +32,18 @@ class OracleBIError(RuntimeError):
     """Falló el inicio de sesión en Oracle BI o una consulta."""
 
 
+class OracleBIAuthError(OracleBIError):
+    """Oracle rechazó el inicio de sesión. Reintentar con la misma contraseña
+    no sirve, y varios intentos fallidos bloquean la cuenta 30 minutos."""
+
+
 @dataclass(frozen=True)
 class OracleBIConfig:
     auth_server: str
     application_server: str
     org_identifier: str
-    client_id: str
-    username: str
+    client_id: str = field(repr=False)
+    username: str = field(repr=False)
     password: str = field(repr=False)
     application_name: str = "Broken Yolk Payroll"
     timeout_seconds: int = 45
@@ -121,20 +127,30 @@ class OracleBIClient:
         challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
         return verifier, challenge
 
-    @staticmethod
-    def _safe_error_message(response: requests.Response) -> str:
+    def _tachar(self, texto: Any) -> str:
+        """Quita del texto la contraseña, el client_id y el usuario, tal cual o
+        codificados para URL, por si Oracle los repite en un error."""
+        texto = str(texto)
+        for valor in (self.config.password, self.config.client_id, self.config.username):
+            for forma in {valor, quote_plus(valor)}:
+                if forma:
+                    texto = texto.replace(forma, "***")
+        return texto
+
+    def _safe_error_message(self, response: requests.Response) -> str:
         try:
             payload = response.json()
             if isinstance(payload, dict):
-                detail = payload.get("detail") or payload.get("message") or payload.get("title")
+                detail = (payload.get("detail") or payload.get("message") or payload.get("title")
+                          or payload.get("error_description") or payload.get("error"))
                 code = payload.get("code") or payload.get("o:errorCode")
                 pieces = [str(x) for x in (detail, code) if x not in (None, "")]
                 if pieces:
-                    return " · ".join(pieces)[:500]
+                    return self._tachar(" · ".join(pieces))[:500]
         except ValueError:
             pass
         text = (response.text or "").strip().replace("\n", " ")
-        return text[:500] or "Oracle no dio detalles"
+        return self._tachar(text)[:500] or "Oracle no dio detalles"
 
     def _pedir_sesion(self, metodo: str, url: str, paso: str, **kwargs: Any) -> requests.Response:
         """Una llamada del inicio de sesión, sin reintentos."""
@@ -146,7 +162,9 @@ class OracleBIClient:
                 **kwargs,
             )
         except requests.RequestException as exc:
-            raise OracleBIError(f"No se pudo conectar con Oracle ({paso}): {type(exc).__name__}") from exc
+            # from None: el mensaje de requests trae la URL del authorize, con
+            # el client_id en la query.
+            raise OracleBIError(f"No se pudo conectar con Oracle ({paso}): {type(exc).__name__}") from None
 
     def authenticate(self, *, force_full: bool = False) -> TokenBundle:
         if not force_full and self.tokens and self.tokens.is_valid():
@@ -175,7 +193,7 @@ class OracleBIClient:
 
         response = self._pedir_sesion("get", self.authorize_url, "authorize", params=params)
         if not response.ok:
-            raise OracleBIError(
+            raise OracleBIAuthError(
                 f"Oracle rechazó la autorización (HTTP {response.status_code}): "
                 f"{self._safe_error_message(response)}"
             )
@@ -192,7 +210,7 @@ class OracleBIClient:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if not response.ok:
-            raise OracleBIError(
+            raise OracleBIAuthError(
                 f"Oracle rechazó el inicio de sesión de la cuenta API (HTTP {response.status_code}): "
                 f"{self._safe_error_message(response)}"
             )
@@ -204,12 +222,13 @@ class OracleBIClient:
 
         if not payload.get("success"):
             detail = payload.get("error") or payload.get("nextOp") or "el inicio de sesión no fue exitoso"
-            raise OracleBIError(f"Oracle rechazó el inicio de sesión de la cuenta API: {detail}")
+            raise OracleBIAuthError(
+                f"Oracle rechazó el inicio de sesión de la cuenta API: {self._tachar(detail)}")
 
         redirect_url = str(payload.get("redirectUrl") or "")
         auth_code = parse_qs(urlparse(redirect_url).query).get("code", [""])[0]
         if not auth_code:
-            raise OracleBIError("El inicio de sesión de Oracle no regresó código de autorización.")
+            raise OracleBIAuthError("El inicio de sesión de Oracle no regresó código de autorización.")
 
         response = self._pedir_sesion(
             "post",
@@ -225,7 +244,10 @@ class OracleBIClient:
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        return self._consume_token_response(response)
+        try:
+            return self._consume_token_response(response)
+        except OracleBIError as exc:
+            raise OracleBIAuthError(str(exc)) from None
 
     def _refresh_tokens(self, refresh_token: str) -> TokenBundle:
         response = self._pedir_sesion(
@@ -297,14 +319,20 @@ class OracleBIClient:
                     verify=self.config.verify_ssl,
                 )
             except requests.exceptions.SSLError as exc:
-                # Un certificado malo no se arregla esperando.
-                raise OracleBIError(f"Oracle {endpoint}: falló el certificado SSL") from exc
-            except (requests.ConnectionError, requests.Timeout) as exc:
+                if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                    # Un certificado malo no se arregla esperando.
+                    raise OracleBIError(f"Oracle {endpoint}: el certificado SSL no es válido") from None
+                respuesta = None
+                falla = type(exc).__name__
+                continue
+            except (requests.ConnectionError, requests.Timeout,
+                    requests.exceptions.ChunkedEncodingError) as exc:
+                # ChunkedEncodingError es la conexión cortada a media respuesta.
                 respuesta = None
                 falla = type(exc).__name__
                 continue
             except requests.RequestException as exc:
-                raise OracleBIError(f"Oracle {endpoint}: {type(exc).__name__}") from exc
+                raise OracleBIError(f"Oracle {endpoint}: {type(exc).__name__}") from None
             if respuesta.status_code not in REINTENTAR_STATUS:
                 return respuesta
         if respuesta is not None:
@@ -409,6 +437,22 @@ class OracleBIClient:
         data["_requestedBusDt"] = business_date.isoformat()
         return data
 
+    def get_job_code_daily_totals(self, loc_ref: str, business_date: date) -> dict[str, Any]:
+        """Horas y pago por revenue center y puesto de un día, sin persona. Es
+        el único total de horas que Oracle da aparte de las tarjetas, así que
+        sirve para cuadrarlas."""
+        data = self.post(
+            "getJobCodeDailyTotals",
+            {
+                "locRef": str(loc_ref),
+                "busDt": business_date.isoformat(),
+                "applicationName": self.config.application_name,
+            },
+        )
+        data.setdefault("locRef", str(loc_ref))
+        data["_requestedBusDt"] = business_date.isoformat()
+        return data
+
     def get_timecards_range(
         self,
         loc_ref: str,
@@ -449,10 +493,15 @@ def _retry_after(respuesta: requests.Response | None) -> float:
 
 
 def iter_timecards(payloads: Iterable[dict[str, Any]]) -> Iterable[tuple[str, str, dict[str, Any]]]:
-    """Regresa (loc_ref, business_date, timecard) de las respuestas de Oracle."""
+    """Regresa (loc_ref, business_date, timecard) de las respuestas de Oracle.
+    Lo que no tenga la forma esperada (una lista donde va una lista) se ignora;
+    las horas que falten las detecta el cuadre contra el total por puesto."""
     for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
         loc_ref = str(payload.get("locRef") or "")
-        business_days = payload.get("businessDates", []) or []
+        business_days = payload.get("businessDates")
+        business_days = business_days if isinstance(business_days, list) else []
         if not business_days and isinstance(payload.get("timeCardDetails"), list):
             business_days = [{
                 "busDt": payload.get("busDt") or payload.get("_requestedBusDt") or "",
@@ -463,7 +512,8 @@ def iter_timecards(payloads: Iterable[dict[str, Any]]) -> Iterable[tuple[str, st
             if not isinstance(business_day, dict):
                 continue
             bus_dt = str(business_day.get("busDt") or payload.get("_requestedBusDt") or "")
-            for timecard in business_day.get("timeCardDetails", []) or []:
+            detalles = business_day.get("timeCardDetails")
+            for timecard in detalles if isinstance(detalles, list) else []:
                 if isinstance(timecard, dict):
                     if adjustments_requested is None:
                         yield loc_ref, bus_dt, timecard
